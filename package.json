@@ -1,0 +1,114 @@
+{
+  "name": "phasepad",
+  "version": "1.0.0",
+  "description": "Advanced sticky notes desktop overlay application",
+  "main": "main.js",
+  "homepage": "https://github.com/OwenModsTW/phasepad",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "security-check": "node build/security-check.js",
+    "prebuild": "npm run security-check",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "build-safe": "npm run security-check && electron-builder",
+    "dist": "npm run build"
+  },
+  "keywords": [
+    "notes",
+    "sticky notes",
+    "desktop",
+    "overlay",
+    "productivity"
+  ],
+  "author": "OwenModsTW (owen)",
+  "license": "CC-BY-NC-SA-4.0",
+  "build": {
+    "appId": "com.owenmodstw.phasepad",
+    "productName": "PhasePad",
+    "description": "Desktop sticky notes overlay application",
+    "copyright": "Copyright © 2024 OwenModsTW (owen). Licensed under CC BY-NC-SA 4.0.",
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "overlay/**/*",
+      "media/**/*",
+      "package.json",
+      "LICENSE",
+      "README.md",
+      "!**/{.DS_Store,.git,.gitignore,.gitattributes}",
+      "!**/{CVS,RCS,SCCS,.svn}",
+      "!**/*.{tmp,temp,bak,old}",
+      "!**/node_modules/.bin",
+      "!**/test/**",
+      "!**/tests/**"
+    ],
+    "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "media/PhasePad.ico",
+      "publisherName": "OwenModsTW",
+      "certificateFile": "phasepad-cert.pfx",
+      "signingHashAlgorithms": ["sha256"],
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "forceCodeSigning": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "OwenModsTW",
+      "repo": "phasepad",
+      "private": false,
+      "releaseType": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "PhasePad",
+      "installerIcon": "media/PhasePad.ico",
+      "uninstallerIcon": "media/PhasePad.ico",
+      "installerHeaderIcon": "media/PhasePad.ico",
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false,
+      "warningsAsErrors": false,
+      "displayLanguageSelector": false,
+      "installerLanguages": [
+        "en_US"
+      ],
+      "language": "1033",
+      "multiLanguageInstaller": false,
+      "packElevateHelper": false,
+      "runAfterFinish": true,
+      "menuCategory": "Productivity",
+      "guid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    }
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.3",
+    "electron-updater": "^6.6.2",
+    "winreg": "^1.2.5"
+  }
+}
