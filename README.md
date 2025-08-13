@@ -59,29 +59,6 @@ Create various types of notes to suit your needs:
 
 *All hotkeys can be customized in Settings → Configure Hotkeys*
 
-## 📦 Installation
-
-### Prerequisites
-- Node.js (Latest LTS version recommended)
-- Windows 10/11
-
-### Setup
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/OwenModsTW/phasepad.git
-   cd phasepad
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the application:
-   ```bash
-   npm start
-   ```
-
 ## 🚀 Usage
 
 ### Getting Started
