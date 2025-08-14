@@ -2,6 +2,14 @@
 
 A powerful, transparent overlay sticky notes application for Windows that lets you place notes, images, timers, and various widgets directly on your desktop. Perfect for quick notes, reminders, and staying organized while you work.
 
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/OwenModsTW/PhasePad)
+![GitHub all releases](https://img.shields.io/github/downloads/OwenModsTW/PhasePad/total)
+![GitHub repo size](https://img.shields.io/github/repo-size/OwenModsTW/PhasePad)
+![GitHub last commit](https://img.shields.io/github/last-commit/OwenModsTW/PhasePad)
+![GitHub issues](https://img.shields.io/github/issues/OwenModsTW/PhasePad)
+![GitHub stars](https://img.shields.io/github/stars/OwenModsTW/PhasePad?style=social)
+![License](https://img.shields.io/github/license/OwenModsTW/PhasePad)
+
 ## ✨ Features
 
 ### Core Functionality
