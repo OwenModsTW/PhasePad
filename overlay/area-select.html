@@ -44,7 +44,13 @@
     let isSelecting = false;
     let startX = 0;
     let startY = 0;
+    let displayInfo = null;
     const selection = document.getElementById('selection');
+    
+    // Listen for display info from main process
+    ipcRenderer.on('display-info', (event, info) => {
+      displayInfo = info;
+    });
     
     document.addEventListener('mousedown', (e) => {
       isSelecting = true;
@@ -82,7 +88,9 @@
         x: parseInt(selection.style.left),
         y: parseInt(selection.style.top),
         width: parseInt(selection.style.width),
-        height: parseInt(selection.style.height)
+        height: parseInt(selection.style.height),
+        displayId: displayInfo ? displayInfo.id : 0,
+        displayBounds: displayInfo ? displayInfo.bounds : null
       };
       
       if (bounds.width > 10 && bounds.height > 10) {

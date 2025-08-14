@@ -2,7 +2,12 @@ const { app, BrowserWindow, globalShortcut, screen, ipcMain, dialog, shell, desk
 const path = require('path');
 const fs = require('fs');
 const remoteMain = require('@electron/remote/main');
+const { autoUpdater } = require('electron-updater');
 remoteMain.initialize();
+
+// Configure auto-updater
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
 
 let overlayWindow = null;
 let isOverlayVisible = false;
@@ -55,7 +60,11 @@ function createOverlayWindow() {
     show: false,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      spellcheck: true,
+      enableWebSQL: false,
+      webgl: true,
+      plugins: false
     }
   });
 
@@ -63,6 +72,37 @@ function createOverlayWindow() {
   
   // Enable remote module for this window
   remoteMain.enable(overlayWindow.webContents);
+  
+  // Enable spell check context menu
+  overlayWindow.webContents.on('context-menu', (event, params) => {
+    const { selectionText, isEditable, misspelledWord, dictionarySuggestions } = params;
+    
+    if (misspelledWord) {
+      // Create context menu for misspelled words
+      const spellingMenu = Menu.buildFromTemplate([
+        ...dictionarySuggestions.slice(0, 6).map(suggestion => ({
+          label: suggestion,
+          click: () => overlayWindow.webContents.replaceMisspelling(suggestion)
+        })),
+        { type: 'separator' },
+        {
+          label: 'Add to Dictionary',
+          click: () => overlayWindow.webContents.session.addWordToSpellCheckerDictionary(misspelledWord)
+        }
+      ]);
+      spellingMenu.popup();
+    } else if (isEditable) {
+      // Create standard edit context menu
+      const editMenu = Menu.buildFromTemplate([
+        { role: 'cut', enabled: selectionText.length > 0 },
+        { role: 'copy', enabled: selectionText.length > 0 },
+        { role: 'paste' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      ]);
+      editMenu.popup();
+    }
+  });
   
   overlayWindow.setIgnoreMouseEvents(false);
   overlayWindow.setVisibleOnAllWorkspaces(true);
@@ -153,17 +193,14 @@ function registerGlobalShortcuts() {
     }
   }
   
-  // Register search hotkey
+  // Register search hotkey (only works when overlay is visible)
   if (currentHotkeys.search) {
     const ret = globalShortcut.register(currentHotkeys.search, () => {
       console.log('Search hotkey pressed');
-      if (!isOverlayVisible) {
-        overlayWindow.show();
-        overlayWindow.focus();
-        overlayWindow.webContents.send('fade-in');
-        isOverlayVisible = true;
+      // Only trigger search if overlay is already visible
+      if (isOverlayVisible) {
+        overlayWindow.webContents.send('focus-search');
       }
-      overlayWindow.webContents.send('focus-search');
     });
     if (ret) {
       console.log(`Successfully registered hotkey: ${currentHotkeys.search} for search`);
@@ -206,6 +243,13 @@ app.whenReady().then(() => {
     isOverlayVisible = false;
   }
   
+  // Setup auto-updater
+  setupAutoUpdater();
+  
+  // Check for updates after a delay
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify();
+  }, 3000);
 });
 
 app.on('will-quit', () => {
@@ -301,31 +345,51 @@ ipcMain.handle('start-area-screenshot', async () => {
     overlayWindow.hide();
   }
   
-  // Create a fullscreen transparent window for area selection
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const areaWindow = new BrowserWindow({
-    width: width,
-    height: height,
-    x: 0,
-    y: 0,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
-  });
+  // Get all displays to create area selection windows on each
+  const displays = screen.getAllDisplays();
+  const areaWindows = [];
   
-  areaWindow.loadFile(path.join(__dirname, 'overlay', 'area-select.html'));
-  
-  // Enable remote module for this window
-  remoteMain.enable(areaWindow.webContents);
+  // Create an area selection window for each display
+  for (const display of displays) {
+    const areaWindow = new BrowserWindow({
+      width: display.bounds.width,
+      height: display.bounds.height,
+      x: display.bounds.x,
+      y: display.bounds.y,
+      transparent: true,
+      frame: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        spellcheck: true,
+        enableWebSQL: false,
+        webgl: true,
+        plugins: false
+      }
+    });
+    
+    areaWindow.loadFile(path.join(__dirname, 'overlay', 'area-select.html'));
+    
+    // Enable remote module for this window
+    remoteMain.enable(areaWindow.webContents);
+    
+    // Pass display info to the window
+    areaWindow.webContents.once('did-finish-load', () => {
+      areaWindow.webContents.send('display-info', {
+        id: display.id,
+        bounds: display.bounds
+      });
+    });
+    
+    areaWindows.push(areaWindow);
+  }
   
   return new Promise((resolve) => {
     ipcMain.once('area-selected', (event, bounds) => {
-      areaWindow.close();
+      // Close all area windows
+      areaWindows.forEach(win => win.close());
       // Delay showing overlay to prevent capturing it in screenshot
       setTimeout(() => {
         if (overlayWindow) {
@@ -336,7 +400,8 @@ ipcMain.handle('start-area-screenshot', async () => {
     });
     
     ipcMain.once('area-cancelled', () => {
-      areaWindow.close();
+      // Close all area windows
+      areaWindows.forEach(win => win.close());
       if (overlayWindow) {
         overlayWindow.show();
       }
@@ -348,9 +413,48 @@ ipcMain.handle('start-area-screenshot', async () => {
 // Handle screenshot capture
 ipcMain.handle('capture-screenshot', async (event, sourceId, bounds = null) => {
   try {
-    // For area screenshots, get higher resolution capture
+    // If bounds are provided, get higher resolution capture and determine correct display
+    let targetDisplaySize = screen.getPrimaryDisplay().size;
+    let targetSourceId = sourceId;
+    
+    if (bounds && bounds.displayBounds) {
+      // Use the display size from the area selection
+      targetDisplaySize = {
+        width: bounds.displayBounds.width,
+        height: bounds.displayBounds.height
+      };
+      
+      // Find the correct screen source for this display
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: targetDisplaySize.width, height: targetDisplaySize.height }
+      });
+      
+      // Try to find the screen source that matches the display
+      const matchingSource = sources.find(s => {
+        // Screen sources are usually named like 'screen:0:0', 'screen:1:0', etc.
+        return s.name.includes(`${bounds.displayId}`) || s.display_id === bounds.displayId;
+      });
+      
+      if (matchingSource) {
+        targetSourceId = matchingSource.id;
+        console.log('Found matching screen source:', targetSourceId, 'for display:', bounds.displayId);
+      } else {
+        // Fallback: use the first available screen source
+        targetSourceId = sources.length > bounds.displayId ? sources[bounds.displayId].id : sources[0].id;
+        console.log('Using fallback screen source:', targetSourceId);
+      }
+    } else {
+      // For non-area screenshots, get all sources
+      const sources = await desktopCapturer.getSources({
+        types: ['window', 'screen'],
+        thumbnailSize: { width: 1920, height: 1080 }
+      });
+    }
+    
+    // Get sources with appropriate thumbnail size
     const thumbnailSize = bounds ? 
-      { width: screen.getPrimaryDisplay().size.width, height: screen.getPrimaryDisplay().size.height } :
+      { width: targetDisplaySize.width, height: targetDisplaySize.height } :
       { width: 1920, height: 1080 };
       
     const sources = await desktopCapturer.getSources({
@@ -358,9 +462,9 @@ ipcMain.handle('capture-screenshot', async (event, sourceId, bounds = null) => {
       thumbnailSize: thumbnailSize
     });
     
-    const source = sources.find(s => s.id === sourceId);
+    const source = sources.find(s => s.id === targetSourceId);
     if (!source) {
-      throw new Error('Source not found');
+      throw new Error(`Source not found: ${targetSourceId}`);
     }
     
     let screenshot = source.thumbnail;
@@ -371,10 +475,11 @@ ipcMain.handle('capture-screenshot', async (event, sourceId, bounds = null) => {
         const originalSize = screenshot.getSize();
         console.log('Original screenshot size:', originalSize);
         console.log('Crop bounds:', bounds);
+        console.log('Target display size:', targetDisplaySize);
         
-        // Calculate scale factors
-        const scaleX = originalSize.width / screen.getPrimaryDisplay().size.width;
-        const scaleY = originalSize.height / screen.getPrimaryDisplay().size.height;
+        // Calculate scale factors based on the actual display size
+        const scaleX = originalSize.width / targetDisplaySize.width;
+        const scaleY = originalSize.height / targetDisplaySize.height;
         
         // Adjust bounds for scaling
         const cropBounds = {
@@ -437,6 +542,11 @@ ipcMain.on('fade-out', () => {
   }
 });
 
+// Handle toggle overlay from ESC key
+ipcMain.on('toggle-overlay', () => {
+  toggleOverlay();
+});
+
 // Timer window management
 const timerWindows = {};
 
@@ -464,7 +574,11 @@ ipcMain.handle('create-timer-window', async (event, noteData) => {
     focusable: true,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      spellcheck: true,
+      enableWebSQL: false,
+      webgl: true,
+      plugins: false
     }
   });
   
@@ -565,6 +679,75 @@ ipcMain.handle('set-startup-status', async (event, enabled) => {
   } catch (error) {
     console.error('Error setting startup status:', error);
     return false;
+  }
+});
+
+// Auto-updater setup
+function setupAutoUpdater() {
+  // Configure update server
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'OwenModsTW',
+    repo: 'PhasePad'
+  });
+
+  // Auto-updater events
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for updates...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox(overlayWindow, {
+      type: 'info',
+      title: 'Update Available',
+      message: `A new version (${info.version}) is available. Would you like to download it?`,
+      detail: 'The update will be installed when you quit the application.',
+      buttons: ['Download', 'Later'],
+      defaultId: 0
+    }).then(result => {
+      if (result.response === 0) {
+        autoUpdater.downloadUpdate();
+      }
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('No updates available');
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('Update error:', err);
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = "Download speed: " + progressObj.bytesPerSecond;
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+    console.log(log_message);
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox(overlayWindow, {
+      type: 'info',
+      title: 'Update Ready',
+      message: 'Update downloaded. The application will restart to apply the update.',
+      buttons: ['Restart Now', 'Later']
+    }).then(result => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+}
+
+// Handle update check from renderer
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdatesAndNotify();
+    return result;
+  } catch (error) {
+    console.error('Error checking for updates:', error);
+    return null;
   }
 });
 

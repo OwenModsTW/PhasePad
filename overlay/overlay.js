@@ -19,15 +19,17 @@ let reminderCheckInterval = null;
 
 // Configuration management
 let appConfig = {
-  dataPath: path.join(__dirname, '..', 'data'),
+  dataPath: path.join(require('os').homedir(), 'PhasePad', 'data'),
   hotkeys: {
     toggleOverlay: 'Alt+Q',
     newNote: 'Ctrl+Shift+N',
     search: 'Ctrl+F',
     archive: 'Ctrl+Shift+A'
-  }
+  },
+  confirmDelete: true,
+  checkForUpdates: true
 };
-const configPath = path.join(__dirname, '..', 'config.json');
+const configPath = path.join(require('os').homedir(), 'PhasePad', 'config.json');
 
 const noteColors = [
   '#ffd700', // yellow
@@ -55,7 +57,7 @@ function getNoteTypeIcon(type) {
     'calculator': '../media/calculatornote.png',
     'timer': '../media/timernote.png',
     'folder': '../media/foldernote.png',
-    'code': '../media/codenote.png'
+    'code': '../media/codenote.png',
   };
   return iconMap[type] || '../media/textnote.png';
 }
@@ -66,6 +68,11 @@ document.addEventListener('DOMContentLoaded', () => {
   
   loadNotes();
   setupEventListeners();
+  
+  // Check for updates if enabled
+  if (appConfig.checkForUpdates !== false) {
+    checkForUpdates();
+  }
   setupIPCListeners();
   setupSearchFunctionality();
   setupKeyboardShortcuts();
@@ -328,11 +335,24 @@ function setupEventListeners() {
     overlayContainer.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
   });
   
-  // Escape key to close
+  // Escape key to minimize overlay
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      ipcRenderer.send('fade-out');
-      setTimeout(() => window.close(), 300);
+      // Check if we're in an input field or have any modal open
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return; // Let the other handler deal with it
+      }
+      
+      // Check if any modal is open
+      const modals = document.querySelectorAll('.screenshot-modal, .share-modal');
+      if (modals.length > 0) {
+        modals.forEach(modal => modal.remove());
+        return;
+      }
+      
+      // Otherwise, minimize the overlay
+      e.preventDefault();
+      ipcRenderer.send('toggle-overlay');
     }
   });
   
@@ -605,6 +625,8 @@ function createNewNote(x, y, type = 'text') {
     timerType: 'pomodoro', // pomodoro, short-break, long-break, custom
     codeContent: '', // code content for code notes
     codeLanguage: 'javascript', // programming language for syntax highlighting
+    ocrImagePath: '', // path to image for OCR processing
+    ocrExtractedText: '', // text extracted from OCR
     tags: [], // array of tag strings
     folderItems: [], // array of note IDs contained in this folder
     parentFolder: null, // ID of parent folder if this note is in a folder
@@ -635,7 +657,7 @@ function renderNote(note) {
   
   let contentHTML = '';
   if (note.type === 'text') {
-    contentHTML = `<textarea class="note-content" placeholder="Type your note here...">${note.content || ''}</textarea>`;
+    contentHTML = `<textarea class="note-content" placeholder="Type your note here..." spellcheck="true">${note.content || ''}</textarea>`;
   } else if (note.type === 'file') {
     contentHTML = `
       <div class="note-content">
@@ -735,11 +757,17 @@ function renderNote(note) {
       }
     }
     
-    // Format datetime for input (datetime-local requires ISO format without seconds)
+    // Format datetime for input (datetime-local requires local time, not UTC)
     const formatForInput = (dateStr) => {
       if (!dateStr) return '';
       const date = new Date(dateStr);
-      return date.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+      // Get local date components
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
     
     contentHTML = `
@@ -976,17 +1004,17 @@ function renderNote(note) {
             ${(note.folderItems || []).map(itemId => {
               const item = notes.find(n => n.id === itemId) || archivedNotes.find(n => n.id === itemId);
               if (!item) return '';
-              const itemTypeIcon = `<img src="${getNoteTypeIcon(item.type)}" class="note-type-icon-img" alt="${item.type}">`;
+              const itemTypeIcon = `<img src="${getNoteTypeIcon(item.type)}" class="note-type-icon-img" alt="${escapeHtml(item.type)}">`;
               return `
                 <div class="folder-item" 
                      onclick="focusNoteFromFolder('${itemId}')" 
-                     title="${item.title || 'Untitled'}"
+                     title="${escapeHtml(item.title || 'Untitled')}"
                      draggable="true"
                      onmousedown="startFolderItemDrag(event, '${itemId}', '${note.id}')"
                      ondragstart="handleFolderItemDragStart(event, '${itemId}', '${note.id}')"
                      ondragend="handleFolderItemDragEnd(event)">
                   <span class="folder-item-icon">${itemTypeIcon}</span>
-                  <span class="folder-item-title">${item.title || 'Untitled'}</span>
+                  <span class="folder-item-title">${escapeHtml(item.title || 'Untitled')}</span>
                   <button class="folder-item-remove" onclick="removeNoteFromFolder(event, '${note.id}', '${itemId}')" title="Remove from folder">×</button>
                 </div>
               `;
@@ -1035,10 +1063,10 @@ function renderNote(note) {
         ${note.type === 'todo' ? '<span class="todo-header-add" onclick="addTodo(\'' + note.id + '\')" title="Add new task">+</span>' : ''}
       </span>
       <div class="note-actions">
-        <div class="color-picker" style="background-color: ${note.color}">
+        <div class="color-picker" style="background-color: ${escapeHtml(note.color)}">
           <div class="color-options">
             ${noteColors.map(color => `
-              <div class="color-option" style="background-color: ${color}" data-color="${color}"></div>
+              <div class="color-option" style="background-color: ${escapeHtml(color)}" data-color="${escapeHtml(color)}"></div>
             `).join('')}
           </div>
         </div>
@@ -1051,11 +1079,11 @@ function renderNote(note) {
         <span class="note-close">&times;</span>
       </div>
     </div>
-    <input class="note-title" placeholder="Title..." value="${note.title || ''}">
+    <input class="note-title" placeholder="Title..." value="${escapeHtml(note.title || '')}">
     <div class="note-tags-container">
-      <input class="note-tags-input" placeholder="Add tags (comma separated)..." value="${(note.tags || []).join(', ')}">
+      <input class="note-tags-input" placeholder="Add tags (comma separated)..." value="${escapeHtml((note.tags || []).join(', '))}">
       <div class="note-tags-display">
-        ${(note.tags || []).map(tag => `<span class="note-tag">${tag}</span>`).join('')}
+        ${(note.tags || []).map(tag => `<span class="note-tag">${escapeHtml(tag)}</span>`).join('')}
       </div>
     </div>
     ${contentHTML}
@@ -1088,8 +1116,8 @@ function renderNote(note) {
   
   document.getElementById('notes-container').appendChild(noteElement);
   
-  // Hide note if it's in a folder
-  if (note.parentFolder) {
+  // Hide note if it's in a folder and not currently opened
+  if (note.parentFolder && !note.isOpenFromFolder) {
     noteElement.style.display = 'none';
   }
   
@@ -1204,7 +1232,15 @@ function setupNoteEventListeners(noteElement, note) {
   });
   
   // Close button
-  closeBtn.addEventListener('click', () => deleteNote(note.id));
+  closeBtn.addEventListener('click', () => {
+    if (note.parentFolder) {
+      // If note is in a folder, just hide it instead of deleting
+      hideNoteFromFolder(note.id);
+    } else {
+      // If not in folder, delete as normal
+      deleteNote(note.id);
+    }
+  });
   
   // Minimize button (only for reminder notes)
   if (minimizeBtn) {
@@ -1409,7 +1445,24 @@ function drag(e) {
 function stopDragging(e) {
   if (isDragging && activeNote) {
     // Check if dropped over a folder
-    checkFolderDropTarget(e, activeNote);
+    const droppedOnFolder = checkFolderDropTarget(e, activeNote);
+    
+    // If note was in a folder but not dropped on another folder, remove it from the original folder
+    if (!droppedOnFolder && activeNote.parentFolder) {
+      const folder = notes.find(n => n.id === activeNote.parentFolder);
+      if (folder && folder.folderItems) {
+        folder.folderItems = folder.folderItems.filter(id => id !== activeNote.id);
+        updateFolderDisplay(activeNote.parentFolder);
+      }
+      activeNote.parentFolder = null;
+      
+      // Make sure the note is visible when removed from folder
+      const noteElement = document.getElementById(activeNote.id);
+      if (noteElement) {
+        noteElement.style.display = 'block';
+      }
+    }
+    
     saveNotes();
   }
   
@@ -1492,16 +1545,42 @@ function stopResizing() {
   document.removeEventListener('mouseup', stopResizing);
 }
 
-function deleteNote(noteId) {
+async function deleteNote(noteId) {
   const note = notes.find(n => n.id === noteId);
+  if (!note) return;
+  
+  // Check if confirmation is needed
+  if (appConfig.confirmDelete) {
+    const confirmed = await showDeleteConfirmation(note);
+    if (!confirmed) {
+      return; // User cancelled
+    }
+  }
   
   // If it's a timer note, stop the timer and close any detached window
-  if (note && note.type === 'timer') {
+  if (note.type === 'timer') {
     stopTimer(noteId);
     if (note.detached) {
       ipcRenderer.invoke('close-timer-window', noteId);
     }
   }
+  
+  // Remove note from any parent folder
+  if (note.parentFolder) {
+    const parentFolder = notes.find(n => n.id === note.parentFolder);
+    if (parentFolder && parentFolder.folderItems) {
+      parentFolder.folderItems = parentFolder.folderItems.filter(id => id !== noteId);
+      updateFolderDisplay(note.parentFolder);
+    }
+  }
+  
+  // Also check all folders in case the note is referenced without parentFolder set
+  notes.forEach(n => {
+    if (n.type === 'folder' && n.folderItems && n.folderItems.includes(noteId)) {
+      n.folderItems = n.folderItems.filter(id => id !== noteId);
+      updateFolderDisplay(n.id);
+    }
+  });
   
   notes = notes.filter(n => n.id !== noteId);
   const noteElement = document.getElementById(noteId);
@@ -1656,6 +1735,11 @@ function loadConfig() {
 
 function saveConfig() {
   try {
+    // Ensure directory exists
+    const configDir = path.dirname(configPath);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
     fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2));
   } catch (error) {
     console.error('Error saving config:', error);
@@ -1836,7 +1920,7 @@ function showHotkeysConfig() {
           <input type="text" 
                  id="hotkey-toggleOverlay" 
                  class="hotkey-input" 
-                 value="${appConfig.hotkeys.toggleOverlay}" 
+                 value="${escapeHtml(appConfig.hotkeys.toggleOverlay)}" 
                  placeholder="Click and press keys"
                  readonly>
           <button class="hotkey-clear" onclick="clearHotkey('toggleOverlay')">Clear</button>
@@ -1846,7 +1930,7 @@ function showHotkeysConfig() {
           <input type="text" 
                  id="hotkey-newNote" 
                  class="hotkey-input" 
-                 value="${appConfig.hotkeys.newNote || ''}" 
+                 value="${escapeHtml(appConfig.hotkeys.newNote || '')}" 
                  placeholder="Click and press keys"
                  readonly>
           <button class="hotkey-clear" onclick="clearHotkey('newNote')">Clear</button>
@@ -1856,7 +1940,7 @@ function showHotkeysConfig() {
           <input type="text" 
                  id="hotkey-search" 
                  class="hotkey-input" 
-                 value="${appConfig.hotkeys.search || ''}" 
+                 value="${escapeHtml(appConfig.hotkeys.search || '')}" 
                  placeholder="Click and press keys"
                  readonly>
           <button class="hotkey-clear" onclick="clearHotkey('search')">Clear</button>
@@ -1866,7 +1950,7 @@ function showHotkeysConfig() {
           <input type="text" 
                  id="hotkey-archive" 
                  class="hotkey-input" 
-                 value="${appConfig.hotkeys.archive || ''}" 
+                 value="${escapeHtml(appConfig.hotkeys.archive || '')}" 
                  placeholder="Click and press keys"
                  readonly>
           <button class="hotkey-clear" onclick="clearHotkey('archive')">Clear</button>
@@ -2209,6 +2293,17 @@ function addTodo(noteId) {
   
   console.log('Current todo items count:', note.todoItems ? note.todoItems.length : 0);
   
+  // Save current values from all todo text fields before re-rendering
+  const noteElement = document.getElementById(noteId);
+  if (noteElement) {
+    const todoTextElements = noteElement.querySelectorAll('.todo-text');
+    todoTextElements.forEach((textarea, index) => {
+      if (note.todoItems && note.todoItems[index]) {
+        note.todoItems[index].text = textarea.value;
+      }
+    });
+  }
+  
   const newTodo = {
     id: Date.now(),
     text: '',
@@ -2223,8 +2318,9 @@ function addTodo(noteId) {
   console.log('New todo items count:', note.todoItems.length);
   
   // Re-render the note
-  const noteElement = document.getElementById(noteId);
-  noteElement.remove();
+  if (noteElement) {
+    noteElement.remove();
+  }
   renderNote(note);
   
   // Focus on the new todo item and setup auto-resize
@@ -2490,11 +2586,12 @@ function showArchivePanel() {
         '<p style="text-align: center; opacity: 0.7; font-size: 14px;">No archived notes</p>' :
         archivedNotes.map(note => {
           const preview = note.content || note.title || note.filePath || 'Untitled';
+          const escapedPreview = escapeHtml(preview.substring(0, 30)) + (preview.length > 30 ? '...' : '');
           return `
             <div class="archive-item" onclick="restoreNote('${note.id}')">
               <div class="archive-item-info">
-                <div class="archive-item-title">${note.title || 'Untitled'}</div>
-                <div class="archive-item-preview">${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}</div>
+                <div class="archive-item-title">${escapeHtml(note.title || 'Untitled')}</div>
+                <div class="archive-item-preview">${escapedPreview}</div>
               </div>
               <div class="archive-item-restore" title="Restore note">↶</div>
             </div>
@@ -2570,6 +2667,8 @@ function updateReminderDateTime(noteId, dateTimeValue) {
   const note = notes.find(n => n.id === noteId);
   if (!note) return;
   
+  // The datetime-local input provides local time, store it as-is
+  // It will be interpreted as local time when creating Date objects
   note.reminderDateTime = dateTimeValue;
   note.reminderTriggered = false; // Reset trigger status when date changes
   saveNotes();
@@ -3611,7 +3710,7 @@ function updateFolderDropFeedback(event) {
 }
 
 function checkFolderDropTarget(event, draggedNote) {
-  if (!event || !draggedNote) return;
+  if (!event || !draggedNote) return false;
   
   // Temporarily hide the dragged note to get element below it
   const draggedElement = document.getElementById(draggedNote.id);
@@ -3628,22 +3727,22 @@ function checkFolderDropTarget(event, draggedNote) {
     draggedElement.style.display = originalDisplay;
   }
   
-  if (!elementBelow) return;
+  if (!elementBelow) return false;
   
   // Find if we're over a folder drop zone
   const folderDropZone = elementBelow.closest('.folder-drop-zone');
-  if (!folderDropZone) return;
+  if (!folderDropZone) return false;
   
   // Get the folder ID from the drop zone
   const folderId = folderDropZone.getAttribute('data-folder-id');
-  if (!folderId || folderId === draggedNote.id) return;
+  if (!folderId || folderId === draggedNote.id) return false;
   
   const folder = notes.find(n => n.id === folderId);
-  if (!folder || folder.type !== 'folder') return;
+  if (!folder || folder.type !== 'folder') return false;
   
   // Prevent circular references
   if (draggedNote.type === 'folder' && (draggedNote.id === folderId || isNoteInFolderHierarchy(folderId, draggedNote.id))) {
-    return;
+    return false;
   }
   
   // Add note to folder
@@ -3654,6 +3753,8 @@ function checkFolderDropTarget(event, draggedNote) {
     // This is a regular note being added to a folder
     addNoteToFolder(draggedNote.id, folderId);
   }
+  
+  return true; // Note was dropped on a folder
 }
 
 function addNoteToFolder(noteId, folderId) {
@@ -3717,17 +3818,17 @@ function updateFolderDisplay(folderId) {
     folderItemsContainer.innerHTML = (folder.folderItems || []).map(itemId => {
       const item = notes.find(n => n.id === itemId) || archivedNotes.find(n => n.id === itemId);
       if (!item) return '';
-      const itemTypeIcon = `<img src="${getNoteTypeIcon(item.type)}" class="note-type-icon-img" alt="${item.type}">`;
+      const itemTypeIcon = `<img src="${getNoteTypeIcon(item.type)}" class="note-type-icon-img" alt="${escapeHtml(item.type)}">`;
       return `
         <div class="folder-item" 
              onclick="focusNoteFromFolder('${itemId}')" 
-             title="${item.title || 'Untitled'}"
+             title="${escapeHtml(item.title || 'Untitled')}"
              draggable="true"
              onmousedown="startFolderItemDrag(event, '${itemId}', '${folderId}')"
              ondragstart="handleFolderItemDragStart(event, '${itemId}', '${folderId}')"
              ondragend="handleFolderItemDragEnd(event)">
           <span class="folder-item-icon">${itemTypeIcon}</span>
-          <span class="folder-item-title">${item.title || 'Untitled'}</span>
+          <span class="folder-item-title">${escapeHtml(item.title || 'Untitled')}</span>
           <button class="folder-item-remove" onclick="removeNoteFromFolder(event, '${folderId}', '${itemId}')" title="Remove from folder">×</button>
         </div>
       `;
@@ -3743,21 +3844,49 @@ function focusNoteFromFolder(noteId) {
   const note = notes.find(n => n.id === noteId);
   if (!note) return;
   
-  // Show the note temporarily to focus on it
-  const noteElement = document.getElementById(noteId);
+  // Mark note as opened from folder
+  note.isOpenFromFolder = true;
+  
+  // Create the note element if it doesn't exist or was hidden
+  let noteElement = document.getElementById(noteId);
+  if (!noteElement) {
+    // Re-create the note element
+    renderNote(note);
+    noteElement = document.getElementById(noteId);
+  }
+  
   if (noteElement) {
+    // Make sure the note is visible
     noteElement.style.display = 'block';
+    noteElement.style.visibility = 'visible';
+    noteElement.style.opacity = '1';
+    
+    // Bring note to front
+    const allNotes = document.querySelectorAll('.note');
+    const maxZ = Math.max(...Array.from(allNotes).map(n => parseInt(n.style.zIndex || 1)));
+    noteElement.style.zIndex = maxZ + 1;
+    
+    // Scroll to the note and highlight it
     noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     
     // Add a temporary highlight effect
     noteElement.style.boxShadow = '0 0 20px rgba(74, 144, 226, 0.8)';
     setTimeout(() => {
       noteElement.style.boxShadow = '';
-      // Hide it again after a moment
-      setTimeout(() => {
-        noteElement.style.display = 'none';
-      }, 3000);
-    }, 500);
+    }, 1000);
+  }
+}
+
+function hideNoteFromFolder(noteId) {
+  const note = notes.find(n => n.id === noteId);
+  if (note) {
+    // Clear the opened from folder flag
+    note.isOpenFromFolder = false;
+  }
+  
+  const noteElement = document.getElementById(noteId);
+  if (noteElement) {
+    noteElement.style.display = 'none';
   }
 }
 
@@ -3872,7 +4001,7 @@ function showShareOptions(noteId) {
   modal.innerHTML = `
     <div class="share-modal-content">
       <h3>Share Note</h3>
-      <p><strong>${note.title || 'Untitled Note'}</strong></p>
+      <p><strong>${escapeHtml(note.title || 'Untitled Note')}</strong></p>
       <div class="share-options">
         <button class="share-btn" onclick="exportAsMarkdown('${noteId}')">
           📝 Save as Markdown
@@ -3881,7 +4010,7 @@ function showShareOptions(noteId) {
           📋 Save as JSON
         </button>
         ${['image', 'paint', 'table'].includes(note.type) ? 
-          '<button class="share-btn" onclick="exportAsPNG(\'' + noteId + '\')">🖼️ Export as PNG</button>' : ''}
+          `<button class="share-btn" onclick="exportAsPNG('${noteId}')">🖼️ Export as PNG</button>` : ''}
         <button class="share-btn" onclick="copyToClipboard('${noteId}')">
           📋 Copy to Clipboard
         </button>
@@ -4076,9 +4205,23 @@ function showSettingsModal() {
             </label>
             <span class="settings-toggle-label">Start with Windows</span>
           </div>
+          <div class="settings-toggle-item">
+            <label class="settings-toggle">
+              <input type="checkbox" id="confirm-delete-toggle">
+              <span class="settings-toggle-slider"></span>
+            </label>
+            <span class="settings-toggle-label">Confirm before deleting notes</span>
+          </div>
+          <div class="settings-toggle-item">
+            <label class="settings-toggle">
+              <input type="checkbox" id="check-updates-toggle">
+              <span class="settings-toggle-slider"></span>
+            </label>
+            <span class="settings-toggle-label">Check for updates automatically</span>
+          </div>
         </div>
         <div class="settings-info">
-          <small>Automatically start PhasePad when Windows starts</small>
+          <small>Customize PhasePad behavior and notifications</small>
         </div>
       </div>
       <div class="settings-section">
@@ -4127,7 +4270,7 @@ function showSettingsModal() {
         <h4>About</h4>
         <div class="settings-info">
           <small>PhasePad - Desktop sticky notes application<br>
-          Version 1.0</small>
+          Version 1.0.1</small>
         </div>
       </div>
       <button class="settings-close" onclick="closeSettingsModal()">Close</button>
@@ -4144,6 +4287,29 @@ function showSettingsModal() {
   const startupToggle = document.getElementById('startup-toggle');
   if (startupToggle) {
     startupToggle.addEventListener('change', handleStartupToggle);
+  }
+  
+  // Set and handle confirm delete toggle
+  const confirmDeleteToggle = document.getElementById('confirm-delete-toggle');
+  if (confirmDeleteToggle) {
+    confirmDeleteToggle.checked = appConfig.confirmDelete !== false;
+    confirmDeleteToggle.addEventListener('change', (e) => {
+      appConfig.confirmDelete = e.target.checked;
+      saveConfig();
+    });
+  }
+  
+  // Set and handle check updates toggle
+  const checkUpdatesToggle = document.getElementById('check-updates-toggle');
+  if (checkUpdatesToggle) {
+    checkUpdatesToggle.checked = appConfig.checkForUpdates !== false;
+    checkUpdatesToggle.addEventListener('change', (e) => {
+      appConfig.checkForUpdates = e.target.checked;
+      saveConfig();
+      if (e.target.checked) {
+        checkForUpdates(); // Check immediately when enabled
+      }
+    });
   }
 }
 
@@ -5163,4 +5329,161 @@ window.setCustomTimer = setCustomTimer;
 window.toggleTimer = toggleTimer;
 window.resetTimer = resetTimer;
 window.detachTimer = detachTimer;
+
+// Version comparison utility
+function compareVersions(version1, version2) {
+  // Remove 'v' prefix if present and normalize
+  const v1 = version1.replace(/^v/, '').split('.').map(n => parseInt(n, 10));
+  const v2 = version2.replace(/^v/, '').split('.').map(n => parseInt(n, 10));
+  
+  // Pad arrays to same length
+  const maxLength = Math.max(v1.length, v2.length);
+  while (v1.length < maxLength) v1.push(0);
+  while (v2.length < maxLength) v2.push(0);
+  
+  // Compare each part
+  for (let i = 0; i < maxLength; i++) {
+    if (v1[i] < v2[i]) return -1;
+    if (v1[i] > v2[i]) return 1;
+  }
+  return 0;
+}
+
+function isNewerVersion(currentVersion, latestVersion) {
+  return compareVersions(currentVersion, latestVersion) < 0;
+}
+
+// Update checking functionality
+async function checkForUpdates() {
+  try {
+    // First try using electron-updater through IPC
+    const result = await ipcRenderer.invoke('check-for-updates');
+    
+    // Also check GitHub API for release notes
+    const response = await fetch('https://api.github.com/repos/OwenModsTW/PhasePad/releases/latest');
+    if (response.ok) {
+      const latestRelease = await response.json();
+      const currentVersion = 'v1.0.1'; // Update this with each release
+      
+      // Only show notification if the latest version is actually newer
+      if (latestRelease.tag_name && isNewerVersion(currentVersion, latestRelease.tag_name)) {
+        console.log(`Update available: ${currentVersion} -> ${latestRelease.tag_name}`);
+        showUpdateNotification(latestRelease);
+      } else {
+        console.log(`No update needed. Current: ${currentVersion}, Latest: ${latestRelease.tag_name || 'unknown'}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for updates:', error);
+  }
+}
+
+function showUpdateNotification(release) {
+  // Remove any existing update notification
+  const existingNotification = document.querySelector('.update-notification');
+  if (existingNotification) {
+    existingNotification.remove();
+  }
+  
+  // Create update notification
+  const notification = document.createElement('div');
+  notification.className = 'update-notification';
+  notification.innerHTML = `
+    <button class="update-notification-close" onclick="this.parentElement.remove()">×</button>
+    <h3>🎉 Update Available!</h3>
+    <p><strong>${release.tag_name}</strong> - ${release.name || 'New version available'}</p>
+    <div class="update-actions">
+      <button class="update-btn-primary" onclick="require('electron').shell.openExternal('${release.html_url}')">Download Update</button>
+      <button class="update-btn-secondary" onclick="this.parentElement.parentElement.remove()">Remind Me Later</button>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-hide after 15 seconds
+  setTimeout(() => {
+    if (notification.parentElement) {
+      notification.remove();
+    }
+  }, 15000);
+}
+
+window.checkForUpdates = checkForUpdates;
 window.focusSearchResult = focusSearchResult;
+window.showUpdateNotification = showUpdateNotification; // For testing
+window.compareVersions = compareVersions; // For testing
+window.isNewerVersion = isNewerVersion; // For testing
+
+
+// Custom delete confirmation modal
+function showDeleteConfirmation(note) {
+  return new Promise((resolve) => {
+    // Remove any existing confirmation modal
+    const existingModal = document.querySelector('.delete-confirmation-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'delete-confirmation-modal';
+    modal.innerHTML = `
+      <div class="delete-confirmation-backdrop" onclick="closeDeleteConfirmation(false)"></div>
+      <div class="delete-confirmation-content">
+        <div class="delete-confirmation-header">
+          <h3>Delete Note?</h3>
+        </div>
+        <div class="delete-confirmation-body">
+          <p>Are you sure you want to delete this <strong>${escapeHtml(note.type)}</strong> note?</p>
+          ${note.title ? `<p class="delete-confirmation-title">"${escapeHtml(note.title)}"</p>` : ''}
+          <p class="delete-confirmation-warning">This action cannot be undone.</p>
+        </div>
+        <div class="delete-confirmation-actions">
+          <button class="delete-confirmation-btn cancel-btn" onclick="closeDeleteConfirmation(false)">Cancel</button>
+          <button class="delete-confirmation-btn delete-btn" onclick="closeDeleteConfirmation(true)">Delete</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Store the resolve function globally so buttons can access it
+    window._deleteConfirmationResolve = resolve;
+    
+    // Add keyboard event listener
+    const handleKeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeDeleteConfirmation(false);
+        document.removeEventListener('keydown', handleKeydown);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        closeDeleteConfirmation(true);
+        document.removeEventListener('keydown', handleKeydown);
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeydown);
+    
+    // Focus the cancel button by default (safer)
+    setTimeout(() => {
+      const cancelBtn = modal.querySelector('.cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.focus();
+      }
+    }, 100);
+  });
+}
+
+function closeDeleteConfirmation(confirmed) {
+  const modal = document.querySelector('.delete-confirmation-modal');
+  if (modal) {
+    modal.remove();
+  }
+  
+  if (window._deleteConfirmationResolve) {
+    window._deleteConfirmationResolve(confirmed);
+    delete window._deleteConfirmationResolve;
+  }
+}
+
+window.closeDeleteConfirmation = closeDeleteConfirmation;
