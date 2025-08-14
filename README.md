@@ -10,7 +10,7 @@ A powerful, transparent overlay sticky notes application for Windows that lets y
 ![GitHub stars](https://img.shields.io/github/stars/OwenModsTW/PhasePad?style=social)
 ![License](https://img.shields.io/github/license/OwenModsTW/PhasePad)
 
-[![Sponsor](https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white)](https://github.com/sponsors/yourusername)
+[![Sponsor](https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white)](https://github.com/sponsors/OwenModsTW)
 
 ## ✨ Features
 
