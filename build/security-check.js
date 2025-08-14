@@ -43,7 +43,9 @@ function scanForSecrets(dir) {
       } else {
         // Check filename against dangerous patterns
         for (const pattern of DANGEROUS_FILES) {
-          if (item.name.match(pattern.replace('*', '.*'))) {
+          // Use global replacement to handle all asterisks in the pattern
+          const regexPattern = pattern.replace(/\*/g, '.*');
+          if (item.name.match(regexPattern)) {
             issues.push({
               type: 'dangerous_file',
               path: relativePath,

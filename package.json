@@ -1,6 +1,6 @@
 {
   "name": "phasepad",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Advanced sticky notes desktop overlay application",
   "main": "main.js",
   "homepage": "https://github.com/OwenModsTW/phasepad",
@@ -8,7 +8,6 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "security-check": "node build/security-check.js",
-    "prebuild": "npm run security-check",
     "build": "electron-builder",
     "build-win": "electron-builder --win",
     "build-safe": "npm run security-check && electron-builder",
@@ -26,7 +25,6 @@
   "build": {
     "appId": "com.owenmodstw.phasepad",
     "productName": "PhasePad",
-    "description": "Desktop sticky notes overlay application",
     "copyright": "Copyright © 2024 OwenModsTW (owen). Licensed under CC BY-NC-SA 4.0.",
     "directories": {
       "buildResources": "build"
@@ -61,13 +59,10 @@
         }
       ],
       "icon": "media/PhasePad.ico",
-      "publisherName": "OwenModsTW",
-      "certificateFile": "phasepad-cert.pfx",
-      "signingHashAlgorithms": ["sha256"],
+      "cscLink": "phasepad-cert.pfx",
       "verifyUpdateCodeSignature": false,
       "requestedExecutionLevel": "asInvoker",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "forceCodeSigning": false
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "publish": {
       "provider": "github",
@@ -99,7 +94,10 @@
       "packElevateHelper": false,
       "runAfterFinish": true,
       "menuCategory": "Productivity",
-      "guid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      "guid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "differentialPackage": false,
+      "uninstallDisplayName": "PhasePad",
+      "removeDefaultUninstallWelcomePage": false
     }
   },
   "devDependencies": {
