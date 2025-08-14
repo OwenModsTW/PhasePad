@@ -19,7 +19,8 @@ A powerful, transparent overlay sticky notes application for Windows that lets y
 - **Persistent Storage**: All notes and settings are automatically saved and restored
 
 ### Screenshots
-[IMGUR](https://imgur.com/a/Wvom4zW)
+
+<img src="media/screenshot.png" alt="PhasePad Screenshot" width="600">
 
 ### Note Types
 Create various types of notes to suit your needs:
