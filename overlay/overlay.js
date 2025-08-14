@@ -2284,16 +2284,10 @@ function setupTodoNote(note) {
 }
 
 function addTodo(noteId) {
-  console.log('addTodo called for noteId:', noteId);
   const note = notes.find(n => n.id === noteId);
-  if (!note) {
-    console.log('Note not found!');
-    return;
-  }
+  if (!note) return;
   
-  console.log('Current todo items count:', note.todoItems ? note.todoItems.length : 0);
-  
-  // Save current values from all todo text fields before re-rendering
+  // Save current values from all todo text fields
   const noteElement = document.getElementById(noteId);
   if (noteElement) {
     const todoTextElements = noteElement.querySelectorAll('.todo-text');
@@ -2315,35 +2309,38 @@ function addTodo(noteId) {
   }
   note.todoItems.push(newTodo);
   
-  console.log('New todo items count:', note.todoItems.length);
-  
-  // Re-render the note
-  if (noteElement) {
-    noteElement.remove();
-  }
-  renderNote(note);
-  
-  // Focus on the new todo item and setup auto-resize
-  setTimeout(() => {
-    const newNoteElement = document.getElementById(noteId);
-    if (newNoteElement) {
-      setupTodoNote(note);
-      const newTodoElement = newNoteElement.querySelector(`[data-id="${newTodo.id}"] .todo-text`);
-      if (newTodoElement) {
-        newTodoElement.focus();
-        newTodoElement.select();
-      }
+  // Update only the todo list content instead of re-rendering entire note
+  const todoListElement = noteElement.querySelector('.todo-list');
+  if (todoListElement) {
+    // Add the new todo item to the existing list
+    const newTodoHTML = `
+      <li class="todo-item" data-id="${newTodo.id}">
+        <div class="todo-checkbox" onclick="toggleTodo('${note.id}', '${newTodo.id}')"></div>
+        <textarea class="todo-text" 
+                  placeholder="Enter task..." 
+                  onblur="updateTodoText('${note.id}', '${newTodo.id}', this.value)"
+                  rows="1">${newTodo.text}</textarea>
+        <span class="todo-delete" onclick="deleteTodo('${note.id}', '${newTodo.id}')"> × </span>
+      </li>
+    `;
+    todoListElement.insertAdjacentHTML('beforeend', newTodoHTML);
+    
+    // Focus on the new todo item
+    const newTextarea = todoListElement.querySelector(`[data-id="${newTodo.id}"] .todo-text`);
+    if (newTextarea) {
+      newTextarea.focus();
     }
-  }, 100);
+  }
   
   saveNotes();
+  generateAutoTitle(noteId);
 }
 
 function deleteTodo(noteId, todoId) {
   const note = notes.find(n => n.id === noteId);
   if (!note) return;
   
-  note.todoItems = note.todoItems.filter(item => item.id != todoId);
+  note.todoItems = note.todoItems.filter(item => item.id != parseInt(todoId));
   
   // Re-render the note
   const noteElement = document.getElementById(noteId);
@@ -3292,7 +3289,7 @@ function updateTodoText(noteId, todoId, text) {
   const note = notes.find(n => n.id === noteId);
   if (!note) return;
   
-  const todoItem = note.todoItems.find(item => item.id === todoId);
+  const todoItem = note.todoItems.find(item => item.id === parseInt(todoId));
   if (todoItem) {
     todoItem.text = text;
     saveNotes();
@@ -3304,7 +3301,7 @@ function toggleTodo(noteId, todoId) {
   const note = notes.find(n => n.id === noteId);
   if (!note) return;
   
-  const todoItem = note.todoItems.find(item => item.id === todoId);
+  const todoItem = note.todoItems.find(item => item.id === parseInt(todoId));
   if (todoItem) {
     todoItem.completed = !todoItem.completed;
     
@@ -4270,7 +4267,7 @@ function showSettingsModal() {
         <h4>About</h4>
         <div class="settings-info">
           <small>PhasePad - Desktop sticky notes application<br>
-          Version 1.0.1</small>
+          Version 1.0.2</small>
         </div>
       </div>
       <button class="settings-close" onclick="closeSettingsModal()">Close</button>
@@ -5363,7 +5360,7 @@ async function checkForUpdates() {
     const response = await fetch('https://api.github.com/repos/OwenModsTW/PhasePad/releases/latest');
     if (response.ok) {
       const latestRelease = await response.json();
-      const currentVersion = 'v1.0.1'; // Update this with each release
+      const currentVersion = 'v1.0.2'; // Update this with each release
       
       // Only show notification if the latest version is actually newer
       if (latestRelease.tag_name && isNewerVersion(currentVersion, latestRelease.tag_name)) {
