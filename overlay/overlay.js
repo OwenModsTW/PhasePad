@@ -2,8 +2,6 @@ const { ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-let notes = [];
-let archivedNotes = [];
 let activeNote = null;
 let currentWorkspace = 'home';
 let workspaceData = {
@@ -663,14 +661,14 @@ function renderNote(note) {
   
   let contentHTML = '';
   if (note.type === 'text') {
-    contentHTML = `<textarea class="note-content" placeholder="Type your note here..." spellcheck="true">${note.content || ''}</textarea>`;
+    contentHTML = `<textarea class="note-content" placeholder="Type your note here..." spellcheck="true">${escapeHTML(note.content || '')}</textarea>`;
   } else if (note.type === 'file') {
     contentHTML = `
       <div class="note-content">
         ${note.filePath ? `
-          <div class="file-link" data-file-path="${note.filePath}">
+          <div class="file-link" data-file-path="${escapeHTML(note.filePath)}">
             <span class="file-icon">📄</span>
-            <span class="file-name">${path.basename(note.filePath)}</span>
+            <span class="file-name">${escapeHTML(path.basename(note.filePath))}</span>
           </div>
         ` : `
           <div class="file-link" data-note-id="${note.id}">
