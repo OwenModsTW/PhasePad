@@ -652,7 +652,13 @@ function renderNote(note) {
   noteElement.style.height = `${note.height}px`;
   noteElement.style.backgroundColor = note.color;
   
-  const typeIcon = `<img src="${getNoteTypeIcon(note.type)}" class="note-type-icon-img" alt="${note.type}" title="${note.type} note">`;
+  // Create type icon safely
+  const typeIconImg = document.createElement('img');
+  typeIconImg.src = getNoteTypeIcon(note.type);
+  typeIconImg.className = 'note-type-icon-img';
+  typeIconImg.alt = note.type;
+  typeIconImg.title = `${note.type} note`;
+  
   const typeName = note.type === 'text' ? 'Text Note' : note.type === 'file' ? 'File Note' : note.type === 'image' ? 'Image Note' : note.type === 'paint' ? 'Paint Note' : note.type === 'todo' ? 'Todo Note' : note.type === 'reminder' ? 'Reminder Note' : note.type === 'web' ? 'Web Note' : note.type === 'table' ? 'Table Note' : note.type === 'location' ? 'Location Note' : note.type === 'calculator' ? 'Calculator Note' : note.type === 'folder' ? 'Folder Note' : note.type === 'code' ? 'Code Snippet' : 'Timer Note';
   
   let contentHTML = '';
@@ -1054,41 +1060,172 @@ function renderNote(note) {
     `;
   }
   
-  noteElement.innerHTML = `
-    <div class="note-header">
-      <span style="font-size: 12px; opacity: 0.7;" class="note-type-info">
-        <span class="note-type-icon">${typeIcon}</span>
-        <span class="note-type-name">${typeName}</span>
-        <span class="note-title-display" style="display: none;"></span>
-        ${note.type === 'todo' ? '<span class="todo-header-add" onclick="addTodo(\'' + note.id + '\')" title="Add new task">+</span>' : ''}
-      </span>
-      <div class="note-actions">
-        <div class="color-picker" style="background-color: ${escapeHtml(note.color)}">
-          <div class="color-options">
-            ${noteColors.map(color => `
-              <div class="color-option" style="background-color: ${escapeHtml(color)}" data-color="${escapeHtml(color)}"></div>
-            `).join('')}
-          </div>
-        </div>
-        <span class="note-minimize" title="Collapse/Expand">—</span>
-        ${['text', 'file', 'image', 'paint', 'todo', 'table', 'code'].includes(note.type) ? 
-          '<span class="note-share" onclick="showShareOptions(\'' + note.id + '\')" title="Share note"><img src="../media/share.png" class="note-action-icon" alt="Share"></span>' : ''}
-        ${['text', 'paint', 'todo', 'table', 'code'].includes(note.type) ? 
-          '<span class="note-email" onclick="emailNote(\'' + note.id + '\')" title="Email note"><img src="../media/emailicon.png" class="note-action-icon" alt="Email"></span>' : ''}
-        <span class="note-archive" onclick="archiveNote('${note.id}')" title="Archive note"><img src="../media/foldernote.png" class="note-action-icon" alt="Archive"></span>
-        <span class="note-close">&times;</span>
-      </div>
-    </div>
-    <input class="note-title" placeholder="Title..." value="${escapeHtml(note.title || '')}">
-    <div class="note-tags-container">
-      <input class="note-tags-input" placeholder="Add tags (comma separated)..." value="${escapeHtml((note.tags || []).join(', '))}">
-      <div class="note-tags-display">
-        ${(note.tags || []).map(tag => `<span class="note-tag">${escapeHtml(tag)}</span>`).join('')}
-      </div>
-    </div>
-    ${contentHTML}
-    <div class="resize-handle resize-se"></div>
-  `;
+  // Build note structure safely using DOM methods
+  
+  // Create note header
+  const noteHeader = document.createElement('div');
+  noteHeader.className = 'note-header';
+  
+  // Create type info section
+  const typeInfo = document.createElement('span');
+  typeInfo.style.fontSize = '12px';
+  typeInfo.style.opacity = '0.7';
+  typeInfo.className = 'note-type-info';
+  
+  // Add type icon
+  const typeIconSpan = document.createElement('span');
+  typeIconSpan.className = 'note-type-icon';
+  typeIconSpan.appendChild(typeIconImg);
+  typeInfo.appendChild(typeIconSpan);
+  
+  // Add type name
+  const typeNameSpan = document.createElement('span');
+  typeNameSpan.className = 'note-type-name';
+  typeNameSpan.textContent = typeName;
+  typeInfo.appendChild(typeNameSpan);
+  
+  // Add title display (hidden by default)
+  const titleDisplay = document.createElement('span');
+  titleDisplay.className = 'note-title-display';
+  titleDisplay.style.display = 'none';
+  typeInfo.appendChild(titleDisplay);
+  
+  // Add todo header button if needed
+  if (note.type === 'todo') {
+    const todoHeaderAdd = document.createElement('span');
+    todoHeaderAdd.className = 'todo-header-add';
+    todoHeaderAdd.textContent = '+';
+    todoHeaderAdd.title = 'Add new task';
+    todoHeaderAdd.onclick = () => addTodo(note.id);
+    typeInfo.appendChild(todoHeaderAdd);
+  }
+  
+  noteHeader.appendChild(typeInfo);
+  
+  // Create note actions section
+  const noteActions = document.createElement('div');
+  noteActions.className = 'note-actions';
+  
+  // Create color picker
+  const colorPicker = document.createElement('div');
+  colorPicker.className = 'color-picker';
+  colorPicker.style.backgroundColor = note.color;
+  
+  const colorOptions = document.createElement('div');
+  colorOptions.className = 'color-options';
+  
+  noteColors.forEach(color => {
+    const colorOption = document.createElement('div');
+    colorOption.className = 'color-option';
+    colorOption.style.backgroundColor = color;
+    colorOption.setAttribute('data-color', color);
+    colorOptions.appendChild(colorOption);
+  });
+  
+  colorPicker.appendChild(colorOptions);
+  noteActions.appendChild(colorPicker);
+  
+  // Create minimize button
+  const minimizeBtn = document.createElement('span');
+  minimizeBtn.className = 'note-minimize';
+  minimizeBtn.title = 'Collapse/Expand';
+  minimizeBtn.textContent = '—';
+  noteActions.appendChild(minimizeBtn);
+  
+  // Create share button if applicable
+  if (['text', 'file', 'image', 'paint', 'todo', 'table', 'code'].includes(note.type)) {
+    const shareBtn = document.createElement('span');
+    shareBtn.className = 'note-share';
+    shareBtn.title = 'Share note';
+    shareBtn.onclick = () => showShareOptions(note.id);
+    
+    const shareImg = document.createElement('img');
+    shareImg.src = '../media/share.png';
+    shareImg.className = 'note-action-icon';
+    shareImg.alt = 'Share';
+    shareBtn.appendChild(shareImg);
+    
+    noteActions.appendChild(shareBtn);
+  }
+  
+  // Create email button if applicable
+  if (['text', 'paint', 'todo', 'table', 'code'].includes(note.type)) {
+    const emailBtn = document.createElement('span');
+    emailBtn.className = 'note-email';
+    emailBtn.title = 'Email note';
+    emailBtn.onclick = () => emailNote(note.id);
+    
+    const emailImg = document.createElement('img');
+    emailImg.src = '../media/emailicon.png';
+    emailImg.className = 'note-action-icon';
+    emailImg.alt = 'Email';
+    emailBtn.appendChild(emailImg);
+    
+    noteActions.appendChild(emailBtn);
+  }
+  
+  // Create archive button
+  const archiveBtn = document.createElement('span');
+  archiveBtn.className = 'note-archive';
+  archiveBtn.title = 'Archive note';
+  archiveBtn.onclick = () => archiveNote(note.id);
+  
+  const archiveImg = document.createElement('img');
+  archiveImg.src = '../media/foldernote.png';
+  archiveImg.className = 'note-action-icon';
+  archiveImg.alt = 'Archive';
+  archiveBtn.appendChild(archiveImg);
+  
+  noteActions.appendChild(archiveBtn);
+  
+  // Create close button
+  const closeBtn = document.createElement('span');
+  closeBtn.className = 'note-close';
+  closeBtn.textContent = '×';
+  noteActions.appendChild(closeBtn);
+  
+  noteHeader.appendChild(noteActions);
+  noteElement.appendChild(noteHeader);
+  
+  // Create title input
+  const titleInput = document.createElement('input');
+  titleInput.className = 'note-title';
+  titleInput.placeholder = 'Title...';
+  titleInput.value = note.title || '';
+  noteElement.appendChild(titleInput);
+  
+  // Create tags container
+  const tagsContainer = document.createElement('div');
+  tagsContainer.className = 'note-tags-container';
+  
+  const tagsInput = document.createElement('input');
+  tagsInput.className = 'note-tags-input';
+  tagsInput.placeholder = 'Add tags (comma separated)...';
+  tagsInput.value = (note.tags || []).join(', ');
+  tagsContainer.appendChild(tagsInput);
+  
+  const tagsDisplay = document.createElement('div');
+  tagsDisplay.className = 'note-tags-display';
+  
+  (note.tags || []).forEach(tag => {
+    const tagSpan = document.createElement('span');
+    tagSpan.className = 'note-tag';
+    tagSpan.textContent = tag;
+    tagsDisplay.appendChild(tagSpan);
+  });
+  
+  tagsContainer.appendChild(tagsDisplay);
+  noteElement.appendChild(tagsContainer);
+  
+  // Add content (still using innerHTML for complex content - this will need separate fixing)
+  const contentDiv = document.createElement('div');
+  contentDiv.innerHTML = contentHTML;
+  noteElement.appendChild(contentDiv);
+  
+  // Create resize handle
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'resize-handle resize-se';
+  noteElement.appendChild(resizeHandle);
   
   setupNoteEventListeners(noteElement, note);
   
@@ -3812,24 +3949,51 @@ function updateFolderDisplay(folderId) {
   const folderCountSpan = document.querySelector(`#${folderId} .folder-count`);
   
   if (folderItemsContainer) {
-    folderItemsContainer.innerHTML = (folder.folderItems || []).map(itemId => {
+    // Clear existing content
+    folderItemsContainer.innerHTML = '';
+    
+    (folder.folderItems || []).forEach(itemId => {
       const item = notes.find(n => n.id === itemId) || archivedNotes.find(n => n.id === itemId);
-      if (!item) return '';
-      const itemTypeIcon = `<img src="${getNoteTypeIcon(item.type)}" class="note-type-icon-img" alt="${escapeHtml(item.type)}">`;
-      return `
-        <div class="folder-item" 
-             onclick="focusNoteFromFolder('${itemId}')" 
-             title="${escapeHtml(item.title || 'Untitled')}"
-             draggable="true"
-             onmousedown="startFolderItemDrag(event, '${itemId}', '${folderId}')"
-             ondragstart="handleFolderItemDragStart(event, '${itemId}', '${folderId}')"
-             ondragend="handleFolderItemDragEnd(event)">
-          <span class="folder-item-icon">${itemTypeIcon}</span>
-          <span class="folder-item-title">${escapeHtml(item.title || 'Untitled')}</span>
-          <button class="folder-item-remove" onclick="removeNoteFromFolder(event, '${folderId}', '${itemId}')" title="Remove from folder">×</button>
-        </div>
-      `;
-    }).join('');
+      if (!item) return;
+      
+      // Create elements safely using DOM methods
+      const folderItem = document.createElement('div');
+      folderItem.className = 'folder-item';
+      folderItem.draggable = true;
+      folderItem.title = item.title || 'Untitled';
+      folderItem.onclick = () => focusNoteFromFolder(itemId);
+      folderItem.onmousedown = (event) => startFolderItemDrag(event, itemId, folderId);
+      folderItem.ondragstart = (event) => handleFolderItemDragStart(event, itemId, folderId);
+      folderItem.ondragend = (event) => handleFolderItemDragEnd(event);
+      
+      // Create icon span with img element
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'folder-item-icon';
+      const iconImg = document.createElement('img');
+      iconImg.src = getNoteTypeIcon(item.type);
+      iconImg.className = 'note-type-icon-img';
+      iconImg.alt = item.type;
+      iconSpan.appendChild(iconImg);
+      
+      // Create title span
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'folder-item-title';
+      titleSpan.textContent = item.title || 'Untitled';
+      
+      // Create remove button
+      const removeButton = document.createElement('button');
+      removeButton.className = 'folder-item-remove';
+      removeButton.textContent = '×';
+      removeButton.title = 'Remove from folder';
+      removeButton.onclick = (event) => removeNoteFromFolder(event, folderId, itemId);
+      
+      // Assemble the folder item
+      folderItem.appendChild(iconSpan);
+      folderItem.appendChild(titleSpan);
+      folderItem.appendChild(removeButton);
+      
+      folderItemsContainer.appendChild(folderItem);
+    });
   }
   
   if (folderCountSpan) {
