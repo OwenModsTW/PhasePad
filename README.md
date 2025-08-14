@@ -10,6 +10,9 @@ A powerful, transparent overlay sticky notes application for Windows that lets y
 - **Dual Workspaces**: Switch between "Home" and "Work" workspaces to organize different contexts
 - **Persistent Storage**: All notes and settings are automatically saved and restored
 
+### Screenshots
+[IMGUR](https://imgur.com/a/Wvom4zW)
+
 ### Note Types
 Create various types of notes to suit your needs:
 
