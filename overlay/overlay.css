@@ -1107,12 +1107,20 @@ body {
 }
 
 /* Todo note styles */
+.note.todo-note .note-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .todo-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  height: 100%;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .todo-item {
@@ -1204,6 +1212,7 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   border-top: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
   margin-top: 8px;
 }
 
@@ -1262,6 +1271,7 @@ body {
   font-size: 12px;
   color: #666;
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
 }
 
 .todo-progress-bar {
